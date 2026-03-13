@@ -18,9 +18,9 @@ console = Console()
 
 CACHE_DIR = Path.home() / ".cache" / "treemoissa"
 LLAMA_DIR = CACHE_DIR / "llama-server"
-MODEL_REPO = "Qwen/Qwen3-VL-8B-Instruct-GGUF"
-MODEL_FILE = "Qwen3VL-8B-Instruct-Q4_K_M.gguf"
-MMPROJ_FILE = "mmproj-Qwen3VL-8B-Instruct-Q8_0.gguf"
+MODEL_REPO = "unsloth/Qwen3.5-9B-GGUF"
+MODEL_FILE = "Qwen3.5-9B-Q4_1.gguf"
+MMPROJ_FILE = "mmproj-BF16.gguf"
 DEFAULT_PORT = 8080
 GITHUB_API = "https://api.github.com/repos/ggml-org/llama.cpp/releases/latest"
 
@@ -114,7 +114,7 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(
         prog="runserver",
-        description="Download and launch llama.cpp server with Qwen3-VL-8B vision model.",
+        description="Download and launch llama.cpp server with Qwen3.5-9B vision model.",
     )
     parser.add_argument(
         "--port", type=int, default=DEFAULT_PORT,
