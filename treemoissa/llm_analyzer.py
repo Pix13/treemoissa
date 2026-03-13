@@ -12,7 +12,20 @@ import httpx
 
 from treemoissa.classifier import _sanitize
 
-DEFAULT_URL = "http://localhost:8080"
+def _default_server_url() -> str:
+    """Return the LLM server URL, using Windows host IP under WSL2."""
+    try:
+        if "microsoft" in Path("/proc/version").read_text().lower():
+            text = Path("/etc/resolv.conf").read_text()
+            for line in text.splitlines():
+                if line.strip().startswith("nameserver"):
+                    return f"http://{line.split()[1]}:8080"
+    except OSError:
+        pass
+    return "http://localhost:8080"
+
+
+DEFAULT_URL = _default_server_url()
 
 _SYSTEM_PROMPT = """\
 You are a car identification expert. Analyze the provided photo and identify ALL cars visible.
