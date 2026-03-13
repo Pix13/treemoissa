@@ -20,7 +20,12 @@ from rich.table import Table
 
 from treemoissa.classifier import classify_car, load_classifier, parse_brand_model
 from treemoissa.color import extract_dominant_color
-from treemoissa.detector import detect_cars, load_detector
+from treemoissa.detector import (
+    AVAILABLE_MODELS,
+    DEFAULT_MODEL,
+    detect_cars,
+    load_detector,
+)
 from treemoissa.organizer import copy_image
 
 console = Console()
@@ -44,10 +49,37 @@ def pick_device() -> str:
     return "cpu"
 
 
+def prompt_model_selection() -> str:
+    """Display an interactive menu to select the detection model."""
+    console.print("\n[bold]Select a detection model:[/bold]\n")
+
+    table = Table(show_header=True, header_style="bold cyan", box=None)
+    table.add_column("#", style="bold", width=3)
+    table.add_column("Model", style="bold")
+    table.add_column("Description")
+
+    keys = list(AVAILABLE_MODELS.keys())
+    for idx, key in enumerate(keys, 1):
+        info = AVAILABLE_MODELS[key]
+        table.add_row(str(idx), info["name"], info["desc"])
+
+    console.print(table)
+    console.print()
+
+    while True:
+        choice = console.input(f"[bold]Choice [1-{len(keys)}] (default: 1):[/bold] ").strip()
+        if choice == "":
+            return keys[0]
+        if choice.isdigit() and 1 <= int(choice) <= len(keys):
+            return keys[int(choice) - 1]
+        console.print(f"[red]Please enter a number between 1 and {len(keys)}.[/red]")
+
+
 def run_pipeline(
     input_dir: Path,
     output_dir: Path,
     conf: float = 0.35,
+    model_key: str | None = None,
 ) -> dict:
     """Run the full detection → classification → organization pipeline."""
     device = pick_device()
@@ -56,9 +88,15 @@ def run_pipeline(
     if device == "cuda":
         console.print(f"[bold]GPU:[/bold] {torch.cuda.get_device_name(0)}")
 
+    # Model selection
+    if model_key is None:
+        model_key = prompt_model_selection()
+
+    model_info = AVAILABLE_MODELS[model_key]
+
     # Load models
-    with console.status("[bold green]Loading detection model (YOLOv8x)..."):
-        detector = load_detector(device=device)
+    with console.status(f"[bold green]Loading detection model ({model_info['name']})..."):
+        detector = load_detector(model_key=model_key, device=device)
 
     with console.status("[bold green]Loading classification model..."):
         processor, classifier = load_classifier(device=device)
@@ -172,6 +210,13 @@ def main() -> None:
         default=0.35,
         help="Minimum detection confidence (default: 0.35)",
     )
+    parser.add_argument(
+        "--model",
+        type=str,
+        choices=list(AVAILABLE_MODELS.keys()),
+        default=None,
+        help="Detection model to use (skip interactive menu)",
+    )
 
     args = parser.parse_args()
 
@@ -179,7 +224,7 @@ def main() -> None:
         console.print(f"[bold red]Error: {args.input_dir} is not a directory.")
         sys.exit(1)
 
-    run_pipeline(args.input_dir, args.output_dir, conf=args.confidence)
+    run_pipeline(args.input_dir, args.output_dir, conf=args.confidence, model_key=args.model)
 
 
 if __name__ == "__main__":

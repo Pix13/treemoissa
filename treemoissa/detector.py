@@ -1,4 +1,4 @@
-"""Car detection using YOLOv8."""
+"""Car detection using YOLO / RT-DETR."""
 
 from __future__ import annotations
 
@@ -17,6 +17,27 @@ _CAR_LABEL = {2: "car", 5: "bus", 7: "truck"}
 # Minimum confidence threshold
 _DEFAULT_CONF = 0.35
 
+# Available detection models (ultralytics auto-downloads missing weights)
+AVAILABLE_MODELS: dict[str, dict[str, str]] = {
+    "yolov8m": {
+        "file": "yolov8m.pt",
+        "name": "YOLOv8 Medium",
+        "desc": "Fast, good accuracy (~50 MB)",
+    },
+    "yolov8l": {
+        "file": "yolov8l.pt",
+        "name": "YOLOv8 Large",
+        "desc": "Slower, better accuracy (~87 MB)",
+    },
+    "rtdetr": {
+        "file": "rtdetr-l.pt",
+        "name": "RT-DETR Large",
+        "desc": "Transformer-based, high accuracy (~65 MB)",
+    },
+}
+
+DEFAULT_MODEL = "yolov8m"
+
 
 @dataclass
 class DetectedCar:
@@ -28,9 +49,10 @@ class DetectedCar:
     vehicle_type: str
 
 
-def load_detector(model_path: str = "yolov8x.pt", device: str = "cuda") -> YOLO:
-    """Load YOLOv8 model (auto-downloads weights on first run)."""
-    model = YOLO(model_path)
+def load_detector(model_key: str = DEFAULT_MODEL, device: str = "cuda") -> YOLO:
+    """Load detection model (auto-downloads weights on first run)."""
+    info = AVAILABLE_MODELS[model_key]
+    model = YOLO(info["file"])
     model.to(device)
     return model
 
