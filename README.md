@@ -4,9 +4,10 @@ Car trackdays and shows photo triage tool — automatically sorts a flat directo
 
 ## Features
 
-- Detects cars in photos using **YOLOv8x** (auto-downloaded on first run)
-- Classifies brand and model using a **HuggingFace vision-language model**
-- Extracts dominant color from each detected car
+- Detects cars in photos using **YOLOv8** or **RT-DETR** (auto-downloaded on first run)
+- Interactive model selection menu with 3 options: YOLOv8m (fast), YOLOv8l (balanced), RT-DETR (high accuracy)
+- Classifies brand and model using a **Vision Transformer** fine-tuned on Stanford Cars
+- Extracts dominant color from each detected car (HSV-based, 11 color categories)
 - If a photo contains multiple cars, it is copied into each matching subdirectory (no hardlinks — NFS-safe)
 - GPU-accelerated (CUDA) with CPU fallback
 - Rich progress display and summary table
@@ -71,12 +72,20 @@ pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
 pip install -e .
 ```
 
-On first run, **YOLOv8x weights** (~140 MB) are downloaded automatically by `ultralytics` into `~/.cache/ultralytics/`.
+On first run, detection weights are downloaded automatically by `ultralytics` into `~/.cache/ultralytics/`:
+
+| Model | Size | Notes |
+|---|---|---|
+| YOLOv8m | ~50 MB | Fast, good for large batches |
+| YOLOv8l | ~87 MB | Better accuracy, default recommendation |
+| RT-DETR-l | ~65 MB | Transformer-based, highest accuracy |
+
+The classification model (`therealcyberlord/stanford-car-vit-patch16`) is downloaded from HuggingFace on first run.
 
 ## Usage
 
 ```
-treemoissa <input_dir> <output_dir> [--confidence THRESHOLD]
+treemoissa <input_dir> <output_dir> [--confidence THRESHOLD] [--model {yolov8m,yolov8l,rtdetr}]
 ```
 
 | Argument | Description |
@@ -84,6 +93,9 @@ treemoissa <input_dir> <output_dir> [--confidence THRESHOLD]
 | `input_dir` | Flat directory containing your car photos |
 | `output_dir` | Destination directory for the organized tree (created if absent) |
 | `--confidence` | Minimum detection confidence, 0–1 (default: `0.35`) |
+| `--model` | Detection model to use: `yolov8m`, `yolov8l`, or `rtdetr` (skips interactive menu) |
+
+If `--model` is not specified, an interactive menu lets you choose the detection model at startup.
 
 ### Examples
 
@@ -97,6 +109,12 @@ Stricter detection (fewer false positives):
 
 ```bash
 treemoissa /mnt/photos/trackday_2024 /mnt/photos/sorted --confidence 0.55
+```
+
+Use RT-DETR for best accuracy:
+
+```bash
+treemoissa /mnt/photos/trackday_2024 /mnt/photos/sorted --model rtdetr
 ```
 
 Input directory over NFS:
