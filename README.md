@@ -9,6 +9,8 @@ Car trackdays and shows photo triage tool — automatically sorts a flat directo
 - Classifies brand and model using a **Vision Transformer** fine-tuned on Stanford Cars
 - Extracts dominant color from each detected car (HSV-based, 11 color categories)
 - If a photo contains multiple cars, it is copied into each matching subdirectory (no hardlinks — NFS-safe)
+- **LLM mode** (`--llm`): send full photos to a local Qwen3.5-9B vision model for brand/model/color identification in a single pass
+- Includes `runserver` tool to auto-download llama.cpp and the GGUF model
 - GPU-accelerated (CUDA) with CPU fallback
 - Rich progress display and summary table
 
@@ -122,6 +124,46 @@ Input directory over NFS:
 ```bash
 treemoissa //nas/photos/events /home/pix/sorted
 ```
+
+## LLM Mode
+
+As an alternative to the YOLO + ViT pipeline, treemoissa can use a local vision LLM
+to identify cars. This sends each photo to a Qwen3.5-9B model served by llama.cpp.
+
+### 1. Start the server
+
+In a dedicated terminal:
+
+```bash
+runserver
+```
+
+On first run, this downloads:
+- **llama.cpp** server binary (latest release from GitHub)
+- **Qwen3.5-9B Q4_1** GGUF model (~5.8 GB from HuggingFace)
+
+Files are cached in `~/.cache/treemoissa/`.
+
+| Option | Description |
+|---|---|
+| `--port` | Server port (default: `8080`) |
+| `--gpu-layers` / `-ngl` | GPU layers to offload (default: `99` = all) |
+| `--ctx-size` / `-c` | Context size (default: `4096`) |
+
+### 2. Run treemoissa with `--llm`
+
+In another terminal:
+
+```bash
+treemoissa /mnt/photos/trackday_2024 /mnt/photos/sorted --llm
+```
+
+| Option | Description |
+|---|---|
+| `--llm` | Use the LLM vision model instead of YOLO + ViT |
+| `--llm-url` | Server URL (default: `http://localhost:8080`) |
+
+In LLM mode, photos with no detected car are copied to `unknown/unknown/unknown`.
 
 ### Supported image formats
 

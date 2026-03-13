@@ -9,7 +9,6 @@ import numpy as np
 from PIL import Image
 from ultralytics import YOLO
 
-
 # COCO class IDs for vehicles
 _CAR_CLASS_IDS = {2, 5, 7}  # car, bus, truck
 _CAR_LABEL = {2: "car", 5: "bus", 7: "truck"}

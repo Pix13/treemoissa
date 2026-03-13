@@ -7,7 +7,6 @@ from collections import Counter
 import numpy as np
 from PIL import Image
 
-
 # HSV-based color mapping: (hue_min, hue_max, sat_min, val_min) -> name
 # Hue is in [0, 180] (OpenCV convention), Sat/Val in [0, 255]
 _COLOR_RANGES: list[tuple[str, tuple[int, int], tuple[int, int], tuple[int, int]]] = [

@@ -8,7 +8,6 @@ import torch
 from PIL import Image
 from transformers import AutoImageProcessor, AutoModelForImageClassification
 
-
 _MODEL_ID = "therealcyberlord/stanford-car-vit-patch16"
 
 
