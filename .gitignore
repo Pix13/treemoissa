@@ -209,3 +209,4 @@ __marimo__/
 # treemoissa - model cache and output
 models/
 output/
+*.pt
