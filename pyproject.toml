@@ -1,0 +1,31 @@
+[project]
+name = "treemoissa"
+version = "0.1.0"
+description = "Car trackdays and shows photo triage tool — sort car photos by brand, model, and color"
+requires-python = ">=3.10"
+dependencies = [
+    "ultralytics>=8.3.0",
+    "torch>=2.0.0",
+    "torchvision>=0.15.0",
+    "transformers>=4.40.0",
+    "Pillow>=10.0.0",
+    "rich>=13.0.0",
+    "numpy>=1.24.0",
+]
+
+[project.scripts]
+treemoissa = "treemoissa.main:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+line-length = 99
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
