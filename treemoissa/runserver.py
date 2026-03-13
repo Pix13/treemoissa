@@ -215,6 +215,7 @@ def main() -> None:
         str(server_bin),
         "-m", model_arg,
         "--mmproj", mmproj_arg,
+        "--host", "0.0.0.0" if wsl else "127.0.0.1",
         "--port", str(args.port),
         "-ngl", str(args.gpu_layers),
         "-c", str(args.ctx_size),
