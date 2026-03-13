@@ -94,7 +94,7 @@ def analyze_image(
     b64_data, media_type = _encode_image(image_path)
 
     payload = {
-        "model": "qwen3.5-9b",
+        "model": "qwen3-vl-8b",
         "messages": [
             {"role": "system", "content": _SYSTEM_PROMPT},
             {

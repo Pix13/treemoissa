@@ -18,8 +18,9 @@ console = Console()
 
 CACHE_DIR = Path.home() / ".cache" / "treemoissa"
 LLAMA_DIR = CACHE_DIR / "llama-server"
-MODEL_REPO = "unsloth/Qwen3.5-9B-GGUF"
-MODEL_FILE = "Qwen3.5-9B-Q4_1.gguf"
+MODEL_REPO = "Qwen/Qwen3-VL-8B-Instruct-GGUF"
+MODEL_FILE = "Qwen3VL-8B-Instruct-Q4_K_M.gguf"
+MMPROJ_FILE = "mmproj-Qwen3VL-8B-Instruct-Q8_0.gguf"
 DEFAULT_PORT = 8080
 GITHUB_API = "https://api.github.com/repos/ggml-org/llama.cpp/releases/latest"
 
@@ -84,16 +85,27 @@ def _get_llama_server_path() -> Path:
     return server_bin
 
 
-def _get_model_path() -> Path:
-    """Return path to GGUF model, downloading if absent."""
+def _get_model_paths() -> tuple[Path, Path]:
+    """Return paths to GGUF model and mmproj, downloading if absent."""
+    models_dir = CACHE_DIR / "models"
+
     console.print(f"[bold]Checking model:[/bold] {MODEL_REPO} / {MODEL_FILE}")
-    path = hf_hub_download(
+    model_path = Path(hf_hub_download(
         repo_id=MODEL_REPO,
         filename=MODEL_FILE,
-        cache_dir=CACHE_DIR / "models",
-    )
-    console.print(f"[green]Model ready:[/green] {path}")
-    return Path(path)
+        cache_dir=models_dir,
+    ))
+    console.print(f"[green]Model ready:[/green] {model_path}")
+
+    console.print(f"[bold]Checking mmproj:[/bold] {MODEL_REPO} / {MMPROJ_FILE}")
+    mmproj_path = Path(hf_hub_download(
+        repo_id=MODEL_REPO,
+        filename=MMPROJ_FILE,
+        cache_dir=models_dir,
+    ))
+    console.print(f"[green]mmproj ready:[/green] {mmproj_path}")
+
+    return model_path, mmproj_path
 
 
 def main() -> None:
@@ -102,7 +114,7 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(
         prog="runserver",
-        description="Download and launch llama.cpp server with Qwen3.5-9B vision model.",
+        description="Download and launch llama.cpp server with Qwen3-VL-8B vision model.",
     )
     parser.add_argument(
         "--port", type=int, default=DEFAULT_PORT,
@@ -119,11 +131,12 @@ def main() -> None:
     args = parser.parse_args()
 
     server_bin = _get_llama_server_path()
-    model_path = _get_model_path()
+    model_path, mmproj_path = _get_model_paths()
 
     cmd = [
         str(server_bin),
         "-m", str(model_path),
+        "--mmproj", str(mmproj_path),
         "--port", str(args.port),
         "-ngl", str(args.gpu_layers),
         "-c", str(args.ctx_size),
