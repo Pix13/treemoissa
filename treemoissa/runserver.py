@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import os
 import stat
 import subprocess
 import sys
@@ -59,13 +60,20 @@ def _get_llama_server_path() -> Path:
         resp = client.get(asset_url)
         resp.raise_for_status()
 
+    found_server = False
     with tarfile.open(fileobj=io.BytesIO(resp.content), mode="r:gz") as tar:
         for member in tar.getmembers():
-            if member.name.endswith("/llama-server") or member.name == "llama-server":
-                member.name = "llama-server"
+            basename = Path(member.name).name
+            # Extract llama-server binary and all shared libraries
+            if basename == "llama-server" or basename.endswith(".so") or ".so." in basename:
+                member.name = basename
                 tar.extract(member, path=LLAMA_DIR)
-                break
-        else:
+                if basename == "llama-server":
+                    found_server = True
+                    console.print(f"  [dim]extracted {basename}[/dim]")
+                else:
+                    console.print(f"  [dim]extracted lib: {basename}[/dim]")
+        if not found_server:
             names = [m.name for m in tar.getmembers()]
             console.print("[bold red]llama-server not found in tarball.[/bold red]")
             console.print(f"Contents: {names[:20]}")
@@ -121,11 +129,12 @@ def main() -> None:
         "-c", str(args.ctx_size),
     ]
 
+    env = {**os.environ, "LD_LIBRARY_PATH": str(LLAMA_DIR)}
     console.print(f"\n[bold green]Starting llama-server on port {args.port}...[/bold green]")
     console.print(f"[dim]{' '.join(cmd)}[/dim]\n")
 
     try:
-        proc = subprocess.run(cmd)
+        proc = subprocess.run(cmd, env=env)
         sys.exit(proc.returncode)
     except KeyboardInterrupt:
         console.print("\n[yellow]Server stopped.[/yellow]")
