@@ -41,7 +41,7 @@ def _get_llama_server_path() -> Path:
         release = resp.json()
 
     tag = release["tag_name"]
-    asset_name = f"llama-{tag}-bin-ubuntu-x64.tar.gz"
+    asset_name = f"llama-{tag}-bin-ubuntu-vulkan-x64.tar.gz"
     asset_url = None
     for asset in release["assets"]:
         if asset["name"] == asset_name:
