@@ -34,18 +34,6 @@ def _is_wsl() -> bool:
         return False
 
 
-def _wsl_host_ip() -> str:
-    """Return the Windows host IP as seen from WSL2."""
-    try:
-        text = Path("/etc/resolv.conf").read_text()
-        for line in text.splitlines():
-            if line.strip().startswith("nameserver"):
-                return line.split()[1]
-    except OSError:
-        pass
-    return "localhost"
-
-
 def _wsl_win_path(posix_path: Path) -> str:
     """Convert a WSL posix path to a Windows path."""
     result = subprocess.run(
@@ -238,9 +226,6 @@ def main() -> None:
         env["LD_LIBRARY_PATH"] = str(LLAMA_DIR)
 
     console.print(f"\n[bold green]Starting llama-server on port {args.port}...[/bold green]")
-    if wsl:
-        host_ip = _wsl_host_ip()
-        console.print(f"[bold cyan]Connect from WSL2:[/bold cyan] http://{host_ip}:{args.port}")
     console.print(f"[dim]{' '.join(cmd)}[/dim]\n")
 
     try:
