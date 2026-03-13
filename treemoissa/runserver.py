@@ -8,6 +8,7 @@ import stat
 import subprocess
 import sys
 import tarfile
+import zipfile
 from pathlib import Path
 
 import httpx
@@ -25,9 +26,51 @@ DEFAULT_PORT = 8080
 GITHUB_API = "https://api.github.com/repos/ggml-org/llama.cpp/releases/latest"
 
 
+def _is_wsl() -> bool:
+    """Detect if running under WSL2."""
+    try:
+        return "microsoft" in Path("/proc/version").read_text().lower()
+    except OSError:
+        return False
+
+
+def _wsl_win_path(posix_path: Path) -> str:
+    """Convert a WSL posix path to a Windows path."""
+    result = subprocess.run(
+        ["wslpath", "-w", str(posix_path)],
+        capture_output=True, text=True, check=True,
+    )
+    return result.stdout.strip()
+
+
+def _download_asset(release: dict, name: str) -> bytes:
+    """Find and download a release asset by name."""
+    url = None
+    for asset in release["assets"]:
+        if asset["name"] == name:
+            url = asset["browser_download_url"]
+            break
+
+    if url is None:
+        console.print(f"[bold red]Could not find asset {name}[/bold red]")
+        console.print("Available assets:")
+        for asset in release["assets"]:
+            console.print(f"  - {asset['name']}")
+        sys.exit(1)
+
+    console.print(f"[bold]Downloading:[/bold] {name}")
+    with httpx.Client(follow_redirects=True, timeout=300) as client:
+        resp = client.get(url)
+        resp.raise_for_status()
+    return resp.content
+
+
 def _get_llama_server_path() -> Path:
     """Return path to llama-server binary, downloading if absent."""
-    server_bin = LLAMA_DIR / "llama-server"
+    wsl = _is_wsl()
+    server_name = "llama-server.exe" if wsl else "llama-server"
+    server_bin = LLAMA_DIR / server_name
+
     if server_bin.exists():
         console.print(f"[green]llama-server found:[/green] {server_bin}")
         return server_bin
@@ -41,31 +84,62 @@ def _get_llama_server_path() -> Path:
         release = resp.json()
 
     tag = release["tag_name"]
-    asset_name = f"llama-{tag}-bin-ubuntu-vulkan-x64.tar.gz"
-    asset_url = None
-    for asset in release["assets"]:
-        if asset["name"] == asset_name:
-            asset_url = asset["browser_download_url"]
-            break
 
-    if asset_url is None:
-        console.print(f"[bold red]Could not find asset {asset_name} in release {tag}[/bold red]")
-        console.print("Available ubuntu assets:")
-        for asset in release["assets"]:
-            if "ubuntu" in asset["name"]:
-                console.print(f"  - {asset['name']}")
+    if wsl:
+        _download_win_cuda(release, tag)
+    else:
+        _download_linux_vulkan(release, tag)
+
+    if not server_bin.exists():
+        console.print(f"[bold red]{server_name} not found after extraction.[/bold red]")
         sys.exit(1)
 
-    console.print(f"[bold]Downloading:[/bold] {asset_name} ({tag})")
-    with httpx.Client(follow_redirects=True, timeout=300) as client:
-        resp = client.get(asset_url)
-        resp.raise_for_status()
+    server_bin.chmod(server_bin.stat().st_mode | stat.S_IEXEC)
+    console.print(f"[green]llama-server installed:[/green] {server_bin}")
+    return server_bin
+
+
+def _download_win_cuda(release: dict, tag: str) -> None:
+    """Download Windows CUDA build (main + cudart) for WSL2."""
+    # Main CUDA build
+    main_asset = f"llama-{tag}-bin-win-cuda-12.4-x64.zip"
+    console.print(f"[bold cyan]WSL2 detected:[/bold cyan] using Windows CUDA build")
+    data = _download_asset(release, main_asset)
+
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        for member in zf.namelist():
+            basename = Path(member).name
+            if not basename:
+                continue
+            if basename.endswith((".exe", ".dll")):
+                with zf.open(member) as src, open(LLAMA_DIR / basename, "wb") as dst:
+                    dst.write(src.read())
+                console.print(f"  [dim]extracted {basename}[/dim]")
+
+    # CUDA runtime DLLs
+    cudart_asset = f"cudart-llama-bin-win-cuda-12.4-x64.zip"
+    data = _download_asset(release, cudart_asset)
+
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        for member in zf.namelist():
+            basename = Path(member).name
+            if not basename:
+                continue
+            if basename.endswith(".dll"):
+                with zf.open(member) as src, open(LLAMA_DIR / basename, "wb") as dst:
+                    dst.write(src.read())
+                console.print(f"  [dim]extracted cudart: {basename}[/dim]")
+
+
+def _download_linux_vulkan(release: dict, tag: str) -> None:
+    """Download Linux Vulkan build."""
+    asset_name = f"llama-{tag}-bin-ubuntu-vulkan-x64.tar.gz"
+    data = _download_asset(release, asset_name)
 
     found_server = False
-    with tarfile.open(fileobj=io.BytesIO(resp.content), mode="r:gz") as tar:
+    with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tar:
         for member in tar.getmembers():
             basename = Path(member.name).name
-            # Extract llama-server binary and all shared libraries
             if basename == "llama-server" or basename.endswith(".so") or ".so." in basename:
                 member.name = basename
                 tar.extract(member, path=LLAMA_DIR)
@@ -74,15 +148,9 @@ def _get_llama_server_path() -> Path:
                     console.print(f"  [dim]extracted {basename}[/dim]")
                 else:
                     console.print(f"  [dim]extracted lib: {basename}[/dim]")
-        if not found_server:
-            names = [m.name for m in tar.getmembers()]
-            console.print("[bold red]llama-server not found in tarball.[/bold red]")
-            console.print(f"Contents: {names[:20]}")
-            sys.exit(1)
-
-    server_bin.chmod(server_bin.stat().st_mode | stat.S_IEXEC)
-    console.print(f"[green]llama-server installed:[/green] {server_bin}")
-    return server_bin
+    if not found_server:
+        console.print("[bold red]llama-server not found in tarball.[/bold red]")
+        sys.exit(1)
 
 
 def _get_model_paths() -> tuple[Path, Path]:
@@ -133,16 +201,29 @@ def main() -> None:
     server_bin = _get_llama_server_path()
     model_path, mmproj_path = _get_model_paths()
 
+    wsl = _is_wsl()
+
+    # Under WSL2, the Windows .exe needs Windows-style paths
+    if wsl:
+        model_arg = _wsl_win_path(model_path)
+        mmproj_arg = _wsl_win_path(mmproj_path)
+    else:
+        model_arg = str(model_path)
+        mmproj_arg = str(mmproj_path)
+
     cmd = [
         str(server_bin),
-        "-m", str(model_path),
-        "--mmproj", str(mmproj_path),
+        "-m", model_arg,
+        "--mmproj", mmproj_arg,
         "--port", str(args.port),
         "-ngl", str(args.gpu_layers),
         "-c", str(args.ctx_size),
     ]
 
-    env = {**os.environ, "LD_LIBRARY_PATH": str(LLAMA_DIR)}
+    env = {**os.environ}
+    if not wsl:
+        env["LD_LIBRARY_PATH"] = str(LLAMA_DIR)
+
     console.print(f"\n[bold green]Starting llama-server on port {args.port}...[/bold green]")
     console.print(f"[dim]{' '.join(cmd)}[/dim]\n")
 
