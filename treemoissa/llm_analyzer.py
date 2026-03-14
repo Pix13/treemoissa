@@ -95,11 +95,24 @@ def _parse_response(text: str) -> list[dict]:
     return []
 
 
+def _build_user_text(context: list[tuple[str, str, str]] | None) -> str:
+    """Build the user message text, optionally prefixed with known cars context."""
+    if not context:
+        return "Identify all cars in this photo. /no_think"
+    lines = ["Previously identified cars at this event:"]
+    for brand, model, color in context:
+        lines.append(f"- {brand} {model} ({color})")
+    lines.append("")
+    lines.append("Identify all cars in this photo. /no_think")
+    return "\n".join(lines)
+
+
 async def analyze_image(
     image_path: Path,
     *,
     client: httpx.AsyncClient,
     server_url: str = DEFAULT_URL,
+    context: list[tuple[str, str, str]] | None = None,
 ) -> tuple[list[LLMCarResult], str]:
     """Send an image to the LLM server and get car identifications.
 
@@ -123,7 +136,7 @@ async def analyze_image(
                     },
                     {
                         "type": "text",
-                        "text": "Identify all cars in this photo. /no_think",
+                        "text": _build_user_text(context),
                     },
                 ],
             },

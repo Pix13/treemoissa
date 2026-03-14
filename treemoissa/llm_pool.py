@@ -12,6 +12,7 @@ import httpx
 
 from treemoissa.llm_analyzer import LLMCarResult, analyze_image
 from treemoissa.organizer import copy_image
+from treemoissa.registry import CarRegistry
 
 
 @dataclass
@@ -61,6 +62,7 @@ class LLMPool:
         semaphores: dict[str, asyncio.Semaphore],
         server_order: list[ServerConfig],
         stats_lock: asyncio.Lock,
+        context: list[tuple[str, str, str]],
     ) -> tuple[list[LLMCarResult] | None, str]:
         """Try to analyze an image, with retries and server fallback.
 
@@ -82,6 +84,7 @@ class LLMPool:
                 try:
                     result, raw_response = await analyze_image(
                         image_path, client=client, server_url=primary.url,
+                        context=context,
                     )
                     responding_url = primary.url
                     break
@@ -101,6 +104,7 @@ class LLMPool:
                 try:
                     result, raw_response = await analyze_image(
                         image_path, client=client, server_url=server.url,
+                        context=context,
                     )
                     responding_url = server.url
                     break
@@ -125,6 +129,7 @@ class LLMPool:
         brand_counts: dict[str, int],
         stats_lock: asyncio.Lock,
         stop_event: asyncio.Event,
+        registry: CarRegistry,
     ) -> None:
         """Worker coroutine: pull photos from queue, analyze, copy."""
         while not stop_event.is_set():
@@ -139,8 +144,9 @@ class LLMPool:
             self._server_index = (idx + 1) % len(self.servers)
             server_order = self.servers[idx:] + self.servers[:idx]
 
+            context = registry.snapshot()
             results, reason = await self._analyze_with_retry(
-                image_path, client, semaphores, server_order, stats_lock,
+                image_path, client, semaphores, server_order, stats_lock, context,
             )
 
             # Copy files outside the lock to avoid serializing I/O
@@ -167,6 +173,8 @@ class LLMPool:
                         car.brand, car.model, car.color,
                     )
                     copies_made.append(car.brand)
+                for car in results:
+                    await registry.add(car.brand, car.model, car.color)
                 async with stats_lock:
                     stats["total_cars"] += len(results)
                     stats["copies"] += len(copies_made)
@@ -195,6 +203,7 @@ class LLMPool:
             s.url: {"count": 0, "start": run_start}
             for s in self.servers
         }
+        registry = CarRegistry(max_size=25)
 
         stats: dict[str, int] = {
             "total_images": len(images),
@@ -226,7 +235,7 @@ class LLMPool:
                 asyncio.create_task(
                     self._worker(
                         queue, client, semaphores, stats, brand_counts,
-                        stats_lock, stop_event,
+                        stats_lock, stop_event, registry,
                     )
                 )
                 for _ in range(num_workers)
