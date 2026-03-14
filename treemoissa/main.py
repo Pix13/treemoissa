@@ -16,6 +16,7 @@ from rich.progress import (
     SpinnerColumn,
     TextColumn,
     TimeElapsedColumn,
+    TimeRemainingColumn,
 )
 from rich.table import Table
 from rich.text import Text
@@ -103,6 +104,7 @@ def _make_progress() -> Progress:
         MofNCompleteColumn(),
         PhotosPerMinuteColumn(),
         TimeElapsedColumn(),
+        TimeRemainingColumn(),
         console=console,
     )
 
