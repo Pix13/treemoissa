@@ -4,14 +4,11 @@ Car trackdays and shows photo triage tool — automatically sorts a flat directo
 
 ## Features
 
-- Detects cars in photos using **YOLOv8** or **RT-DETR** (auto-downloaded on first run)
-- Interactive model selection menu with 3 options: YOLOv8m (fast), YOLOv8l (balanced), RT-DETR (high accuracy)
-- Classifies brand and model using a **Vision Transformer** fine-tuned on Stanford Cars
-- Extracts dominant color from each detected car (HSV-based, 11 color categories)
+- **LLM vision mode (default):** sends photos to a local Qwen3.5-9B vision model for brand/model/color identification in a single pass
+- **Multi-server support:** distribute work across multiple LLM servers in parallel
+- **ML pipeline (optional):** detect cars with YOLOv8 / RT-DETR, classify with a Vision Transformer, extract color via HSV analysis
 - If a photo contains multiple cars, it is copied into each matching subdirectory (no hardlinks — NFS-safe)
-- **LLM mode** (`--llm`): send full photos to a local Qwen3.5-9B vision model for brand/model/color identification in a single pass
 - Includes `runserver` tool to auto-download llama.cpp and the GGUF model
-- GPU-accelerated (CUDA) with CPU fallback
 - Rich progress display and summary table
 
 ## Output structure
@@ -31,8 +28,8 @@ output_dir/
 ## Requirements
 
 - Python 3.10+
-- NVIDIA GPU with CUDA toolkit (recommended — GeForce RTX 4060 Ti or similar)
 - WSL2 or Linux
+- NVIDIA GPU with CUDA toolkit (recommended for `runserver` — GeForce RTX 4060 Ti or similar)
 
 ## Installation
 
@@ -59,61 +56,59 @@ python3 -m venv .venv
 source .venv/bin/activate
 ```
 
-### 3. Install PyTorch with CUDA support
+### 3. Install treemoissa
 
-Before installing the project dependencies, install the correct PyTorch build for your CUDA version.
-Check your CUDA version with `nvcc --version` or `nvidia-smi`, then visit [pytorch.org](https://pytorch.org/get-started/locally/) for the exact install command. Example for CUDA 12.1:
-
-```bash
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
-```
-
-### 4. Install treemoissa
+**Lightweight (LLM only — recommended):**
 
 ```bash
 pip install -e .
 ```
 
-On first run, detection weights are downloaded automatically by `ultralytics` into `~/.cache/ultralytics/`:
+**With ML pipeline (YOLO + ViT):**
 
-| Model | Size | Notes |
-|---|---|---|
-| YOLOv8m | ~50 MB | Fast, good for large batches |
-| YOLOv8l | ~87 MB | Better accuracy, default recommendation |
-| RT-DETR-l | ~65 MB | Transformer-based, highest accuracy |
+```bash
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+pip install -e ".[ml]"
+```
 
-The classification model (`therealcyberlord/stanford-car-vit-patch16`) is downloaded from HuggingFace on first run.
+Check your CUDA version with `nvcc --version` or `nvidia-smi`, then visit [pytorch.org](https://pytorch.org/get-started/locally/) for the exact PyTorch install command.
 
 ## Usage
 
 ```
-treemoissa <input_dir> <output_dir> [--confidence THRESHOLD] [--model {yolov8m,yolov8l,rtdetr}]
+treemoissa <input_dir> <output_dir> [options]
 ```
 
 | Argument | Description |
 |---|---|
 | `input_dir` | Flat directory containing your car photos |
 | `output_dir` | Destination directory for the organized tree (created if absent) |
-| `--confidence` | Minimum detection confidence, 0–1 (default: `0.35`) |
-| `--model` | Detection model to use: `yolov8m`, `yolov8l`, or `rtdetr` (skips interactive menu) |
-
-If `--model` is not specified, an interactive menu lets you choose the detection model at startup.
+| `--llm-host` | LLM server(s) as `ip:port,ip:port` (default: `localhost:8080`) |
+| `--llm-concurrency` | Concurrent requests per server (default: `1`) |
+| `--model` | Use YOLO+ViT pipeline: `yolov8m`, `yolov8l`, or `rtdetr` (requires `treemoissa[ml]`) |
+| `--confidence` | Minimum detection confidence for ML mode (default: `0.35`) |
 
 ### Examples
 
-Basic usage:
+Basic usage (local LLM server):
 
 ```bash
 treemoissa /mnt/photos/trackday_2024 /mnt/photos/sorted
 ```
 
-Stricter detection (fewer false positives):
+Multiple LLM servers in parallel:
 
 ```bash
-treemoissa /mnt/photos/trackday_2024 /mnt/photos/sorted --confidence 0.55
+treemoissa /mnt/photos/trackday_2024 /mnt/photos/sorted --llm-host 10.0.0.1:8080,10.0.0.2:8080
 ```
 
-Use RT-DETR for best accuracy:
+Remote LLM server with higher concurrency:
+
+```bash
+treemoissa /mnt/photos/trackday_2024 /mnt/photos/sorted --llm-host 192.168.1.10:8080 --llm-concurrency 2
+```
+
+Use YOLO+ViT ML pipeline (requires `treemoissa[ml]`):
 
 ```bash
 treemoissa /mnt/photos/trackday_2024 /mnt/photos/sorted --model rtdetr
@@ -125,14 +120,9 @@ Input directory over NFS:
 treemoissa //nas/photos/events /home/pix/sorted
 ```
 
-## LLM Mode
+## LLM Server Setup
 
-As an alternative to the YOLO + ViT pipeline, treemoissa can use a local vision LLM
-to identify cars. This sends each photo to a Qwen3.5-9B model served by llama.cpp.
-
-### 1. Start the server
-
-In a dedicated terminal:
+Before using treemoissa, start the LLM server in a dedicated terminal:
 
 ```bash
 runserver
@@ -150,30 +140,61 @@ Files are cached in `~/.cache/treemoissa/`.
 | `--gpu-layers` / `-ngl` | GPU layers to offload (default: `99` = all) |
 | `--ctx-size` / `-c` | Context size (default: `4096`) |
 
-### 2. Run treemoissa with `--llm`
-
-In another terminal:
+Then in another terminal, run treemoissa:
 
 ```bash
-treemoissa /mnt/photos/trackday_2024 /mnt/photos/sorted --llm
+treemoissa /mnt/photos/trackday_2024 /mnt/photos/sorted
 ```
 
-| Option | Description |
-|---|---|
-| `--llm` | Use the LLM vision model instead of YOLO + ViT |
-| `--llm-url` | Server URL (default: `http://localhost:8080`) |
+Photos with no detected car are copied to `unknown/unknown/unknown`.
 
-In LLM mode, photos with no detected car are copied to `unknown/unknown/unknown`.
+## ML Pipeline (optional)
+
+If you installed with `pip install -e ".[ml]"`, you can use the YOLO + ViT pipeline instead of the LLM:
+
+```bash
+treemoissa /mnt/photos/trackday_2024 /mnt/photos/sorted --model yolov8l
+```
+
+On first run, detection weights are downloaded automatically by `ultralytics` into `~/.cache/ultralytics/`:
+
+| Model | Size | Notes |
+|---|---|---|
+| YOLOv8m | ~50 MB | Fast, good for large batches |
+| YOLOv8l | ~87 MB | Better accuracy |
+| RT-DETR-l | ~65 MB | Transformer-based, highest accuracy |
+
+The classification model (`therealcyberlord/stanford-car-vit-patch16`) is downloaded from HuggingFace on first run.
 
 ### Supported image formats
 
 `.jpg` `.jpeg` `.png` `.bmp` `.webp` `.tiff` `.tif`
 
+## WSL2 Configuration
+
+For the LLM server to be reachable via `localhost` from within WSL2, WSL2 must be configured in **mirrored networking mode**.
+
+Add the following to `%USERPROFILE%\.wslconfig` on Windows:
+
+```ini
+[wsl2]
+networkingMode=mirrored
+```
+
+Then restart WSL2:
+
+```powershell
+wsl --shutdown
+```
+
+Without this setting, `localhost` inside WSL2 does not map to the Windows loopback interface and the `runserver` endpoint will not be reachable at `http://localhost:8080`.
+
 ## Notes
 
 - Photos are **copied**, never moved — your original directory is untouched.
 - Copies use `shutil.copy2` (no hardlinks) so the tool works over NFS mounts.
-- If no car is detected in a photo, it is silently skipped and counted in the summary.
+- In LLM mode, photos with no detected car are copied to `unknown/unknown/unknown`.
+- In ML mode, photos with no detected car are silently skipped and counted in the summary.
 - The tool processes the input directory non-recursively (flat directory expected).
 
 ## Development

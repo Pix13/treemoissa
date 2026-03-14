@@ -9,6 +9,12 @@ The aim of this project is to create a console tool that will take as input a fl
 If a picture have multiple cars on it, the picture must be duplicated in each brand/model/color subdirectory.
 Claude will identify the best AI models for this, and the tool will download them automatically and set itself up on the computer.
 
+## Architecture
+
+- **LLM mode (default):** lightweight install (`pip install treemoissa`), uses a local llama.cpp server with Qwen3.5-9B for car identification. Supports multiple servers via `--llm-host ip:port,ip:port`.
+- **ML mode (optional):** requires `pip install treemoissa[ml]` for PyTorch + YOLO + ViT pipeline, activated with `--model`.
+- `runserver` command auto-downloads llama.cpp and the GGUF model.
+
 ## Notes
 
 - The `.gitignore` is configured for Python projects and includes patterns for common tools: pytest, mypy, ruff, venv, uv, poetry, pdm, pixi, and marimo.
