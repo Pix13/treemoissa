@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
@@ -51,6 +52,7 @@ class LLMPool:
     transport: httpx.AsyncBaseTransport | None = None
     on_progress: Callable[[], None] | None = None
     _server_index: int = 0  # rotating index for round-robin
+    _server_stats: dict = field(default_factory=dict, init=False)
 
     async def _analyze_with_retry(
         self,
@@ -58,34 +60,53 @@ class LLMPool:
         client: httpx.AsyncClient,
         semaphores: dict[str, asyncio.Semaphore],
         server_order: list[ServerConfig],
+        stats_lock: asyncio.Lock,
     ) -> list[LLMCarResult] | None:
         """Try to analyze an image, with retries and server fallback.
 
         Returns list of results, or None if all servers failed.
+        Stats are recorded under stats_lock, credited to the responding server.
+        Lock order: semaphore is always released before stats_lock is acquired.
         """
         primary = server_order[0]
         fallbacks = server_order[1:]
 
         # Try primary server with retries
+        result = None
+        responding_url = None
         async with semaphores[primary.url]:
             for attempt in range(MAX_RETRIES + 1):
                 try:
-                    return await analyze_image(
+                    result = await analyze_image(
                         image_path, client=client, server_url=primary.url,
                     )
+                    responding_url = primary.url
+                    break
                 except (httpx.HTTPStatusError, httpx.RequestError):
                     if attempt < MAX_RETRIES:
                         continue
+
+        if responding_url is not None:
+            async with stats_lock:
+                self._server_stats[responding_url]["count"] += 1
+            return result
 
         # Fallback: try each remaining server once
         for server in fallbacks:
             async with semaphores[server.url]:
                 try:
-                    return await analyze_image(
+                    result = await analyze_image(
                         image_path, client=client, server_url=server.url,
                     )
+                    responding_url = server.url
+                    break
                 except (httpx.HTTPStatusError, httpx.RequestError):
                     continue
+
+        if responding_url is not None:
+            async with stats_lock:
+                self._server_stats[responding_url]["count"] += 1
+            return result
 
         return None
 
@@ -113,7 +134,7 @@ class LLMPool:
             server_order = self.servers[idx:] + self.servers[:idx]
 
             results = await self._analyze_with_retry(
-                image_path, client, semaphores, server_order,
+                image_path, client, semaphores, server_order, stats_lock,
             )
 
             # Copy files outside the lock to avoid serializing I/O
@@ -161,6 +182,12 @@ class LLMPool:
         if on_progress:
             self.on_progress = on_progress
 
+        run_start = time.monotonic()
+        self._server_stats = {
+            s.url: {"count": 0, "start": run_start}
+            for s in self.servers
+        }
+
         stats: dict[str, int] = {
             "total_images": len(images),
             "total_cars": 0,
@@ -199,5 +226,11 @@ class LLMPool:
 
             await asyncio.gather(*workers)
 
+        now = time.monotonic()
         stats["brand_counts"] = brand_counts
+        stats["server_stats"] = {
+            url: {"count": d["count"], "elapsed": now - d["start"]}
+            for url, d in self._server_stats.items()
+            if d["count"] > 0
+        }
         return stats

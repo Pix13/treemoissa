@@ -12,15 +12,28 @@ from rich.progress import (
     BarColumn,
     MofNCompleteColumn,
     Progress,
+    ProgressColumn,
     SpinnerColumn,
     TextColumn,
     TimeElapsedColumn,
 )
 from rich.table import Table
+from rich.text import Text
 
 from treemoissa.organizer import copy_image
 
 console = Console()
+
+
+class PhotosPerMinuteColumn(ProgressColumn):
+    """Rich progress column displaying photos processed per minute."""
+
+    def render(self, task) -> Text:
+        if task.speed is None:
+            return Text("-- img/min", style="progress.data.speed")
+        rate = task.speed * 60  # task.speed is img/sec; multiply by 60 → img/min
+        return Text(f"{rate:.1f} img/min", style="progress.data.speed")
+
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tiff", ".tif"}
 
@@ -37,7 +50,12 @@ def gather_images(input_dir: Path) -> list[Path]:
     return images
 
 
-def _print_summary(stats: dict, brand_counts: dict[str, int]) -> None:
+def _print_summary(
+    stats: dict,
+    brand_counts: dict[str, int],
+    *,
+    server_stats: dict | None = None,
+) -> None:
     """Print results summary and brand breakdown tables."""
     console.print()
     table = Table(title="Results Summary")
@@ -58,6 +76,23 @@ def _print_summary(stats: dict, brand_counts: dict[str, int]) -> None:
             brand_table.add_row(brand, str(count))
         console.print(brand_table)
 
+    if server_stats:
+        console.print()
+        server_table = Table(title="Throughput by Server")
+        server_table.add_column("Server", style="bold")
+        server_table.add_column("Images", justify="right")
+        server_table.add_column("img/min (avg)", justify="right")
+        for url, d in sorted(server_stats.items(), key=lambda x: -x[1]["count"]):
+            elapsed = d["elapsed"]
+            if elapsed == 0.0:
+                rate_str = "--"
+            elif elapsed < 1.0:
+                rate_str = "--"
+            else:
+                rate_str = f"{d['count'] / elapsed * 60:.1f}"
+            server_table.add_row(url, str(d["count"]), rate_str)
+        console.print(server_table)
+
 
 def _make_progress() -> Progress:
     """Create a Rich progress bar."""
@@ -66,6 +101,7 @@ def _make_progress() -> Progress:
         TextColumn("[progress.description]{task.description}"),
         BarColumn(),
         MofNCompleteColumn(),
+        PhotosPerMinuteColumn(),
         TimeElapsedColumn(),
         console=console,
     )
@@ -113,7 +149,8 @@ def _run_llm_pipeline(
             return {"total_images": len(images), "total_cars": 0, "copies": 0, "no_car": 0}
 
     brand_counts = stats.pop("brand_counts", {})
-    _print_summary(stats, brand_counts)
+    server_stats = stats.pop("server_stats", None)
+    _print_summary(stats, brand_counts, server_stats=server_stats)
     return stats
 
 
