@@ -8,6 +8,8 @@ import torch
 from PIL import Image
 from transformers import AutoImageProcessor, AutoModelForImageClassification
 
+from treemoissa.utils import _sanitize
+
 _MODEL_ID = "therealcyberlord/stanford-car-vit-patch16"
 
 
@@ -92,10 +94,3 @@ def parse_brand_model(label: str) -> tuple[str, str]:
     return _sanitize(parts[0]), "unknown"
 
 
-def _sanitize(name: str) -> str:
-    """Sanitize a name for use as a directory component."""
-    name = name.strip().lower()
-    # Remove characters not safe for filenames
-    name = re.sub(r"[^\w\s-]", "", name)
-    name = re.sub(r"\s+", "_", name)
-    return name or "unknown"

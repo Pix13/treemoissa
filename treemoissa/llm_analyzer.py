@@ -10,7 +10,7 @@ from pathlib import Path
 
 import httpx
 
-from treemoissa.classifier import _sanitize
+from treemoissa.utils import _sanitize
 
 DEFAULT_URL = "http://localhost:8080"
 
