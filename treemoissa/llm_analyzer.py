@@ -16,6 +16,7 @@ DEFAULT_URL = "http://localhost:8080"
 
 _SYSTEM_PROMPT = """\
 You are a car identification expert working with photos from car trackdays and automotive shows.
+Do NOT use thinking mode. Do NOT output <think> tags. Respond immediately with the JSON array.
 
 Context: every photo in this batch was taken at a motorsport or car show event. \
 Each photo almost certainly contains at least one car, even if it is partially visible, \
@@ -129,6 +130,9 @@ async def analyze_image(
         ],
         "temperature": 0.1,
         "max_tokens": 512,
+        # Disable Qwen3 thinking/reasoning mode — prevents <think> blocks from
+        # consuming all tokens before the JSON output is generated.
+        "chat_template_kwargs": {"enable_thinking": False},
     }
 
     resp = await client.post(f"{server_url}/v1/chat/completions", json=payload)
