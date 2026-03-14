@@ -82,10 +82,11 @@ def _parse_response(text: str) -> list[dict]:
     return []
 
 
-def analyze_image(
+async def analyze_image(
     image_path: Path,
+    *,
+    client: httpx.AsyncClient,
     server_url: str = DEFAULT_URL,
-    timeout: float = 120.0,
 ) -> list[LLMCarResult]:
     """Send an image to the LLM server and get car identifications.
 
@@ -117,9 +118,8 @@ def analyze_image(
         "max_tokens": 1024,
     }
 
-    with httpx.Client(timeout=timeout) as client:
-        resp = client.post(f"{server_url}/v1/chat/completions", json=payload)
-        resp.raise_for_status()
+    resp = await client.post(f"{server_url}/v1/chat/completions", json=payload)
+    resp.raise_for_status()
 
     data = resp.json()
     text = data["choices"][0]["message"]["content"]
