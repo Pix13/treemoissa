@@ -54,12 +54,13 @@ async def test_analyze_image_single_car(tmp_path):
         lambda request: httpx.Response(200, json=response_body)
     )
     async with httpx.AsyncClient(transport=transport) as client:
-        results = await analyze_image(img_path, client=client, server_url="http://fake:8080")
+        results, raw = await analyze_image(img_path, client=client, server_url="http://fake:8080")
 
     assert len(results) == 1
     assert results[0].brand == "ferrari"
     assert results[0].model == "f40"
     assert results[0].color == "red"
+    assert "ferrari" in raw.lower()
 
 
 @pytest.mark.asyncio
@@ -79,6 +80,7 @@ async def test_analyze_image_no_cars(tmp_path):
         lambda request: httpx.Response(200, json=response_body)
     )
     async with httpx.AsyncClient(transport=transport) as client:
-        results = await analyze_image(img_path, client=client, server_url="http://fake:8080")
+        results, raw = await analyze_image(img_path, client=client, server_url="http://fake:8080")
 
     assert results == []
+    assert raw == "[]"

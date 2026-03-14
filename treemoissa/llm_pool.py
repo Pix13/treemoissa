@@ -61,11 +61,13 @@ class LLMPool:
         semaphores: dict[str, asyncio.Semaphore],
         server_order: list[ServerConfig],
         stats_lock: asyncio.Lock,
-    ) -> list[LLMCarResult] | None:
+    ) -> tuple[list[LLMCarResult] | None, str]:
         """Try to analyze an image, with retries and server fallback.
 
-        Returns list of results, or None if all servers failed.
-        Stats are recorded under stats_lock, credited to the responding server.
+        Returns (results, reason):
+        - results is None if all servers failed (connection error)
+        - results is [] if the LLM responded but detected no car
+        - reason is a human-readable string for logging unknown outcomes
         Lock order: semaphore is always released before stats_lock is acquired.
         """
         primary = server_order[0]
@@ -73,11 +75,12 @@ class LLMPool:
 
         # Try primary server with retries
         result = None
+        raw_response = None
         responding_url = None
         async with semaphores[primary.url]:
             for attempt in range(MAX_RETRIES + 1):
                 try:
-                    result = await analyze_image(
+                    result, raw_response = await analyze_image(
                         image_path, client=client, server_url=primary.url,
                     )
                     responding_url = primary.url
@@ -89,13 +92,14 @@ class LLMPool:
         if responding_url is not None:
             async with stats_lock:
                 self._server_stats[responding_url]["count"] += 1
-            return result
+            reason = f"LLM response from {responding_url}:\n{raw_response}"
+            return result, reason
 
         # Fallback: try each remaining server once
         for server in fallbacks:
             async with semaphores[server.url]:
                 try:
-                    result = await analyze_image(
+                    result, raw_response = await analyze_image(
                         image_path, client=client, server_url=server.url,
                     )
                     responding_url = server.url
@@ -106,9 +110,11 @@ class LLMPool:
         if responding_url is not None:
             async with stats_lock:
                 self._server_stats[responding_url]["count"] += 1
-            return result
+            reason = f"LLM response from {responding_url}:\n{raw_response}"
+            return result, reason
 
-        return None
+        servers_tried = ", ".join(s.url for s in server_order)
+        return None, f"Connection error: all retries and fallbacks failed.\nServers tried: {servers_tried}"
 
     async def _worker(
         self,
@@ -133,16 +139,18 @@ class LLMPool:
             self._server_index = (idx + 1) % len(self.servers)
             server_order = self.servers[idx:] + self.servers[:idx]
 
-            results = await self._analyze_with_retry(
+            results, reason = await self._analyze_with_retry(
                 image_path, client, semaphores, server_order, stats_lock,
             )
 
             # Copy files outside the lock to avoid serializing I/O
             if results is None or not results:
-                await asyncio.to_thread(
+                dest = await asyncio.to_thread(
                     copy_image, image_path, self.output_dir,
                     "unknown", "unknown", "unknown",
                 )
+                log_path = dest.with_suffix(".log")
+                await asyncio.to_thread(log_path.write_text, reason, "utf-8")
                 async with stats_lock:
                     stats["no_car"] += 1
                     stats["copies"] += 1

@@ -99,10 +99,11 @@ async def analyze_image(
     *,
     client: httpx.AsyncClient,
     server_url: str = DEFAULT_URL,
-) -> list[LLMCarResult]:
+) -> tuple[list[LLMCarResult], str]:
     """Send an image to the LLM server and get car identifications.
 
-    Returns a list of LLMCarResult. Empty list means no cars detected.
+    Returns (results, raw_response_text).
+    results is an empty list if the LLM detected no cars.
     """
     b64_data, media_type = _encode_image(image_path)
 
@@ -146,4 +147,4 @@ async def analyze_image(
         color = _sanitize(str(car.get("color", "unknown")))
         results.append(LLMCarResult(brand=brand, model=model, color=color))
 
-    return results
+    return results, text
