@@ -31,13 +31,15 @@ class CarRegistry:
 - If the tuple already exists, move it to the front (LRU bump — recently seen cars stay visible).
 - If not present and registry is full, evict the oldest entry (tail), then prepend the new one.
 - If not present and registry is not full, prepend.
-- Entries with `brand == "unknown"` or `model == "unknown"` are silently ignored (partial identifications do not pollute the context).
+- Entries with `brand == "unknown"` or `model == "unknown"` are silently ignored (partial identifications do not pollute the context). `color == "unknown"` is accepted — a known brand+model with unknown color is still useful context.
 
 **`snapshot()`:**
-- Returns a shallow copy of the current list without acquiring the lock (list reads in CPython are safe for this use case; the copy avoids mutation during iteration).
-- Returns newest-first order.
+- Synchronous (no `await`). In asyncio, coroutines only yield at `await` points. Because `snapshot()` has no `await`, it cannot be interleaved with `add()` on the event loop — no lock is needed. This is **asyncio-specific** reasoning; it would be unsafe in a threaded context.
+- Returns a shallow copy (list) of the registry keys, newest-first (index 0 = most recently seen).
 
-**Internal structure:** `collections.OrderedDict` keyed by `(brand, model, color)` tuple, values unused. Provides O(1) lookup, insertion, and deletion needed for LRU.
+**Internal structure:** `collections.OrderedDict` keyed by `(brand, model, color)` tuple, values unused.
+
+**LRU direction:** front = index 0 = newest (most recently seen or added). Tail = last index = oldest. `OrderedDict.move_to_end(key, last=False)` moves to front. Eviction removes the tail (`last=True` in `popitem`).
 
 ### 2. Prompt injection — `treemoissa/llm_analyzer.py`
 
@@ -76,12 +78,21 @@ registry = CarRegistry(max_size=25)
 
 `registry` is passed to each worker via a new parameter.
 
+**`_analyze_with_retry` gains a `context` parameter:**
+```python
+async def _analyze_with_retry(
+    self, image_path, client, semaphores, server_order, stats_lock,
+    context: list[tuple[str, str, str]],
+) -> tuple[list[LLMCarResult] | None, str]:
+```
+It forwards `context` to every `analyze_image` call. No other logic changes.
+
 **In `_worker()`**, before calling `_analyze_with_retry`:
 ```python
 context = registry.snapshot()
 ```
 
-`context` is threaded through `_analyze_with_retry` down to `analyze_image`.
+`context` flows: `_worker` → `_analyze_with_retry` → `analyze_image`.
 
 **After a successful identification** (results non-empty), in `_worker()`:
 ```python
@@ -114,7 +125,8 @@ _worker
 |------|-----------|
 | First images (registry empty) | `context=[]` → no injection, prompt unchanged |
 | All results unknown | Registry not updated |
-| brand or model == "unknown" but color known | Not added (partial ID excluded) |
+| brand or model == "unknown" | Not added (partial ID excluded) |
+| color == "unknown" but brand+model known | Added (useful context even without color) |
 | Registry at capacity | Oldest entry evicted, new entry prepended |
 | Same car seen again | Moved to front (LRU bump), no duplicate |
 | Concurrent workers adding same car | Lock ensures only one entry added |
@@ -128,7 +140,7 @@ _worker
 |------|--------|
 | `treemoissa/registry.py` | **New file** — `CarRegistry` class |
 | `treemoissa/llm_analyzer.py` | Add `context` param to `analyze_image`; inject block into user message |
-| `treemoissa/llm_pool.py` | Instantiate `CarRegistry` in `run()`; pass to `_worker`; snapshot before each call; update after success |
+| `treemoissa/llm_pool.py` | Instantiate `CarRegistry` in `run()`; pass to `_worker`; add `context` param to `_analyze_with_retry`; snapshot before each call; update after success |
 
 ---
 
