@@ -105,7 +105,7 @@ Photos → asyncio.Queue
 | `main.py` | Remove `--llm`/`--llm-url`, add `--llm-host`/`--llm-concurrency`, lazy ML imports, auto-detect mode based on `--model` presence, call `asyncio.run()` for LLM pipeline. When `--model` is used without `[ml]` installed, catch `ImportError` and print: `"Error: --model requires ML dependencies. Install with: pip install treemoissa[ml]"` then `sys.exit(1)`. |
 | `llm_analyzer.py` | Refactor to async (`analyze_image` → `async def`), accept `httpx.AsyncClient` as parameter instead of creating its own client, add retry + server fallback logic |
 | `detector.py` | No changes (imported lazily) |
-| `classifier.py` | No changes (imported lazily) |
+| `classifier.py` | Import `_sanitize` from `utils.py` instead of defining locally (imported lazily) |
 | `color.py` | No changes (only uses PIL/numpy which are core deps) |
 
 **New file:** `utils.py` — extract `_sanitize()` from `classifier.py` into this dependency-free module. Both `classifier.py` and `llm_analyzer.py` import from here. This breaks the transitive `torch` import chain that would otherwise pull ML deps in LLM-only mode.
