@@ -122,13 +122,13 @@ async def analyze_image(
                     },
                     {
                         "type": "text",
-                        "text": "Identify all cars in this photo.",
+                        "text": "Identify all cars in this photo. /no_think",
                     },
                 ],
             },
         ],
         "temperature": 0.1,
-        "max_tokens": 1024,
+        "max_tokens": 512,
     }
 
     resp = await client.post(f"{server_url}/v1/chat/completions", json=payload)
