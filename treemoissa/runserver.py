@@ -19,11 +19,61 @@ console = Console()
 
 CACHE_DIR = Path.home() / ".cache" / "treemoissa"
 LLAMA_DIR = CACHE_DIR / "llama-server"
-MODEL_REPO = "unsloth/Qwen3.5-9B-GGUF"
-MODEL_FILE = "Qwen3.5-9B-Q4_1.gguf"
 MMPROJ_FILE = "mmproj-BF16.gguf"
 DEFAULT_PORT = 8080
+DEFAULT_QUANT = "Q4_K_M"
 GITHUB_API = "https://api.github.com/repos/ggml-org/llama.cpp/releases/latest"
+
+ALLOWED_QUANTS = [
+    "Q3_K_M", "Q3_K_S", "Q4_0", "Q4_1", "Q4_K_M", "Q4_K_S",
+    "Q5_K_M", "Q5_K_S", "Q6_K", "Q8_0", "BF16",
+]
+
+# Ordered largest to smallest. min_vram_mb includes ~1.2 GB overhead for mmproj + KV cache.
+MODEL_CANDIDATES = [
+    {"size": "27B", "repo": "unsloth/Qwen3.5-27B-GGUF", "min_vram_mb": 18_000},
+    {"size": "9B",  "repo": "unsloth/Qwen3.5-9B-GGUF",  "min_vram_mb": 7_000},
+    {"size": "4B",  "repo": "unsloth/Qwen3.5-4B-GGUF",  "min_vram_mb": 4_000},
+    {"size": "2B",  "repo": "unsloth/Qwen3.5-2B-GGUF",  "min_vram_mb": 3_000},
+    {"size": "0.8B", "repo": "unsloth/Qwen3.5-0.8B-GGUF", "min_vram_mb": 2_000},
+]
+
+DEFAULT_MODEL_REPO = "unsloth/Qwen3.5-9B-GGUF"
+
+
+def _detect_vram_mb() -> int | None:
+    """Detect total GPU VRAM in MB via nvidia-smi. Returns None on failure."""
+    try:
+        result = subprocess.run(
+            ["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits"],
+            capture_output=True, text=True, check=True,
+        )
+        return int(result.stdout.strip().split("\n")[0])
+    except (FileNotFoundError, subprocess.CalledProcessError, ValueError):
+        return None
+
+
+def _select_best_model(vram_mb: int | None, quant: str) -> tuple[str, str, str]:
+    """Select the best Qwen3.5 model that fits in available VRAM.
+
+    Returns (repo_id, model_filename, display_name).
+    """
+    if vram_mb is None:
+        size = "9B"
+        filename = f"Qwen3.5-{size}-{quant}.gguf"
+        return DEFAULT_MODEL_REPO, filename, f"Qwen3.5-{size}-{quant} (default, VRAM unknown)"
+
+    for candidate in MODEL_CANDIDATES:
+        if vram_mb >= candidate["min_vram_mb"]:
+            size = candidate["size"]
+            filename = f"Qwen3.5-{size}-{quant}.gguf"
+            return candidate["repo"], filename, f"Qwen3.5-{size}-{quant}"
+
+    # Even smallest doesn't fit — use smallest anyway
+    smallest = MODEL_CANDIDATES[-1]
+    size = smallest["size"]
+    filename = f"Qwen3.5-{size}-{quant}.gguf"
+    return smallest["repo"], filename, f"Qwen3.5-{size}-{quant} (warning: may exceed VRAM)"
 
 
 def _is_wsl() -> bool:
@@ -153,21 +203,21 @@ def _download_linux_vulkan(release: dict, tag: str) -> None:
         sys.exit(1)
 
 
-def _get_model_paths() -> tuple[Path, Path]:
+def _get_model_paths(model_repo: str, model_file: str) -> tuple[Path, Path]:
     """Return paths to GGUF model and mmproj, downloading if absent."""
     models_dir = CACHE_DIR / "models"
 
-    console.print(f"[bold]Checking model:[/bold] {MODEL_REPO} / {MODEL_FILE}")
+    console.print(f"[bold]Checking model:[/bold] {model_repo} / {model_file}")
     model_path = Path(hf_hub_download(
-        repo_id=MODEL_REPO,
-        filename=MODEL_FILE,
+        repo_id=model_repo,
+        filename=model_file,
         cache_dir=models_dir,
     ))
     console.print(f"[green]Model ready:[/green] {model_path}")
 
-    console.print(f"[bold]Checking mmproj:[/bold] {MODEL_REPO} / {MMPROJ_FILE}")
+    console.print(f"[bold]Checking mmproj:[/bold] {model_repo} / {MMPROJ_FILE}")
     mmproj_path = Path(hf_hub_download(
-        repo_id=MODEL_REPO,
+        repo_id=model_repo,
         filename=MMPROJ_FILE,
         cache_dir=models_dir,
     ))
@@ -182,7 +232,7 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(
         prog="runserver",
-        description="Download and launch llama.cpp server with Qwen3.5-9B vision model.",
+        description="Download and launch llama.cpp server with auto-selected Qwen3.5 vision model.",
     )
     parser.add_argument(
         "--port", type=int, default=DEFAULT_PORT,
@@ -196,10 +246,26 @@ def main() -> None:
         "--ctx-size", "-c", type=int, default=4096,
         help="Context size (default: 4096)",
     )
+    parser.add_argument(
+        "--quant", type=str, default=DEFAULT_QUANT,
+        choices=ALLOWED_QUANTS,
+        help=f"Model quantization (default: {DEFAULT_QUANT})",
+    )
     args = parser.parse_args()
 
+    vram_mb = _detect_vram_mb()
+    if vram_mb is not None:
+        console.print(f"[bold]VRAM detected:[/bold] {vram_mb} MB")
+    else:
+        console.print("[yellow]Could not detect VRAM — using default model.[/yellow]")
+
+    model_repo, model_file, display_name = _select_best_model(vram_mb, args.quant)
+    console.print(f"[bold]Selected model:[/bold] {display_name}")
+    if args.quant == DEFAULT_QUANT:
+        console.print("[dim]Use --quant to override (e.g. --quant Q8_0)[/dim]")
+
     server_bin = _get_llama_server_path()
-    model_path, mmproj_path = _get_model_paths()
+    model_path, mmproj_path = _get_model_paths(model_repo, model_file)
 
     wsl = _is_wsl()
 
