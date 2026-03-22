@@ -153,7 +153,7 @@ def _download_win_cuda(release: dict, tag: str) -> None:
     """Download Windows CUDA build (main + cudart) for WSL2."""
     # Main CUDA build
     main_asset = f"llama-{tag}-bin-win-cuda-12.4-x64.zip"
-    console.print(f"[bold cyan]WSL2 detected:[/bold cyan] using Windows CUDA build")
+    console.print("[bold cyan]WSL2 detected:[/bold cyan] using Windows CUDA build")
     data = _download_asset(release, main_asset)
 
     with zipfile.ZipFile(io.BytesIO(data)) as zf:
@@ -167,7 +167,7 @@ def _download_win_cuda(release: dict, tag: str) -> None:
                 console.print(f"  [dim]extracted {basename}[/dim]")
 
     # CUDA runtime DLLs
-    cudart_asset = f"cudart-llama-bin-win-cuda-12.4-x64.zip"
+    cudart_asset = "cudart-llama-bin-win-cuda-12.4-x64.zip"
     data = _download_asset(release, cudart_asset)
 
     with zipfile.ZipFile(io.BytesIO(data)) as zf:
@@ -232,7 +232,7 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(
         prog="runserver",
-        description="Download and launch llama.cpp server with auto-selected Qwen3.5 vision model.",
+        description="Download and launch llama.cpp server with auto-selected Qwen3.5 model.",
     )
     parser.add_argument(
         "--port", type=int, default=DEFAULT_PORT,

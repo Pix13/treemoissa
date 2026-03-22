@@ -1,10 +1,9 @@
 """Tests for runserver VRAM detection and model selection."""
 
 import subprocess
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch  # noqa: I001
 
 from treemoissa.runserver import _detect_vram_mb, _select_best_model
-
 
 # --- _detect_vram_mb ---
 
