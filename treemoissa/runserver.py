@@ -243,8 +243,8 @@ def main() -> None:
         help="Number of layers to offload to GPU (default: 99 = all)",
     )
     parser.add_argument(
-        "--ctx-size", "-c", type=int, default=4096,
-        help="Context size (default: 4096)",
+        "--ctx-size", "-c", type=int, default=8192,
+        help="Context size (default: 8192)",
     )
     parser.add_argument(
         "--quant", type=str, default=DEFAULT_QUANT,
@@ -285,6 +285,7 @@ def main() -> None:
         "--port", str(args.port),
         "-ngl", str(args.gpu_layers),
         "-c", str(args.ctx_size),
+        "--jinja",
     ]
 
     env = {**os.environ}
