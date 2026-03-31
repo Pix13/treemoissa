@@ -22,6 +22,7 @@ from rich.table import Table
 from rich.text import Text
 
 from treemoissa.organizer import copy_image
+from treemoissa.utils import wsl_keep_awake
 
 console = Console()
 
@@ -339,14 +340,15 @@ def main() -> None:
         console.print(f"[bold red]Error: {args.input_dir} is not a directory.")
         sys.exit(1)
 
-    run_pipeline(
-        args.input_dir,
-        args.output_dir,
-        conf=args.confidence,
-        model_key=args.model,
-        llm_host=args.llm_host,
-        llm_concurrency=args.llm_concurrency,
-    )
+    with wsl_keep_awake():
+        run_pipeline(
+            args.input_dir,
+            args.output_dir,
+            conf=args.confidence,
+            model_key=args.model,
+            llm_host=args.llm_host,
+            llm_concurrency=args.llm_concurrency,
+        )
 
 
 if __name__ == "__main__":

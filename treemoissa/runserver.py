@@ -15,6 +15,8 @@ import httpx
 from huggingface_hub import hf_hub_download
 from rich.console import Console
 
+from treemoissa.utils import is_wsl
+
 console = Console()
 
 CACHE_DIR = Path.home() / ".cache" / "treemoissa"
@@ -76,14 +78,6 @@ def _select_best_model(vram_mb: int | None, quant: str) -> tuple[str, str, str]:
     return smallest["repo"], filename, f"Qwen3.5-{size}-{quant} (warning: may exceed VRAM)"
 
 
-def _is_wsl() -> bool:
-    """Detect if running under WSL2."""
-    try:
-        return "microsoft" in Path("/proc/version").read_text().lower()
-    except OSError:
-        return False
-
-
 def _wsl_win_path(posix_path: Path) -> str:
     """Convert a WSL posix path to a Windows path."""
     result = subprocess.run(
@@ -117,7 +111,7 @@ def _download_asset(release: dict, name: str) -> bytes:
 
 def _get_llama_server_path() -> Path:
     """Return path to llama-server binary, downloading if absent."""
-    wsl = _is_wsl()
+    wsl = is_wsl()
     server_name = "llama-server.exe" if wsl else "llama-server"
     server_bin = LLAMA_DIR / server_name
 
@@ -267,7 +261,7 @@ def main() -> None:
     server_bin = _get_llama_server_path()
     model_path, mmproj_path = _get_model_paths(model_repo, model_file)
 
-    wsl = _is_wsl()
+    wsl = is_wsl()
 
     # Under WSL2, the Windows .exe needs Windows-style paths
     if wsl:
