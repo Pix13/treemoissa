@@ -116,9 +116,10 @@ def _run_llm_pipeline(
     llm_host: str,
     concurrency: int,
     *,
-    llm_model: str = "qwen3.5-9b",
+    llm_model: str | None = None,
 ) -> dict:
     """Run the async LLM-based pipeline."""
+    from treemoissa.llm_analyzer import _discover_model
     from treemoissa.llm_pool import LLMPool, ServerConfig
 
     images = gather_images(input_dir)
@@ -128,6 +129,15 @@ def _run_llm_pipeline(
 
     servers = ServerConfig.parse(llm_host)
     server_list = ", ".join(s.url for s in servers)
+
+    # Auto-discover model from server if not specified
+    if llm_model is None:
+        with console.status("[bold green]Discovering available models..."):
+            llm_model = _discover_model(servers[0].url)
+        if llm_model is None:
+            console.print("[bold red]Error: could not auto-discover model. Use --llm-model to specify one.[/bold red]")
+            return {"total_images": 0, "total_cars": 0, "copies": 0, "no_car": 0}
+
     console.print(f"[bold]Mode:[/bold] LLM vision")
     console.print(f"[bold]Servers:[/bold] {server_list}")
     console.print(f"[bold]Model:[/bold] {llm_model}")
@@ -307,8 +317,8 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--llm-model",
         type=str,
-        default="qwen3.5-9b",
-        help="Model name on the LLM server (default: qwen3.5-9b)",
+        default=None,
+        help="Model name on the LLM server (default: auto-discovered from /v1/models)",
     )
     parser.add_argument(
         "--model",
@@ -335,7 +345,7 @@ def run_pipeline(
     *,
     llm_host: str = "localhost:8080",
     llm_concurrency: int = 1,
-    llm_model: str = "qwen3.5-9b",
+    llm_model: str | None = None,
 ) -> dict:
     """Run the pipeline — LLM by default, ML if --model specified."""
     if model_key is not None:

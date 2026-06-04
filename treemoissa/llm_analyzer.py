@@ -14,6 +14,35 @@ from treemoissa.utils import _sanitize
 
 DEFAULT_URL = "http://localhost:8080"
 
+
+def _discover_model(server_url: str, *, timeout: float = 10.0) -> str | None:
+    """Query the server's /v1/models endpoint and return the first model ID.
+
+    Uses the base URL (strips any trailing path like /v1) to construct
+    the models endpoint. Returns None on failure.
+    """
+    # Determine the base URL for the /v1/models endpoint.
+    # If server_url is like http://host:8080/v1, base is http://host:8080.
+    # If server_url is like http://host:8080, base is http://host:8080.
+    base = server_url.rstrip("/")
+    # If the URL ends with a path segment (e.g. /v1), strip it to get the host:port base
+    if base.endswith("/v1"):
+        base = base[:-3]
+    models_url = f"{base}/v1/models"
+
+    try:
+        with httpx.Client(timeout=timeout, follow_redirects=True) as client:
+            resp = client.get(models_url)
+            resp.raise_for_status()
+            data = resp.json()
+            models = data.get("data", [])
+            if models:
+                return models[0].get("id")
+    except (httpx.HTTPError, json.JSONDecodeError, KeyError):
+        pass
+    return None
+
+
 _SYSTEM_PROMPT = """\
 You are a car identification expert working with photos from car trackdays and automotive shows.
 Do NOT use thinking mode. Do NOT output <think> tags. Respond immediately with the JSON array.
