@@ -82,6 +82,18 @@ def _parse_response(text: str) -> list[dict]:
     except json.JSONDecodeError:
         pass
 
+    # Strip markdown code fences (```json ... ``` or ``` ... ```)
+    stripped = re.sub(r"^```(?:json)?\s*", "", text, flags=re.MULTILINE)
+    stripped = re.sub(r"\s*```\s*$", "", stripped, flags=re.MULTILINE)
+
+    # Try parsing the stripped text
+    try:
+        result = json.loads(stripped)
+        if isinstance(result, list):
+            return result
+    except json.JSONDecodeError:
+        pass
+
     # Try to find JSON array in the text
     match = re.search(r"\[.*\]", text, re.DOTALL)
     if match:
@@ -113,6 +125,7 @@ async def analyze_image(
     client: httpx.AsyncClient,
     server_url: str = DEFAULT_URL,
     context: list[tuple[str, str, str]] | None = None,
+    model_name: str = "qwen3.5-9b",
 ) -> tuple[list[LLMCarResult], str]:
     """Send an image to the LLM server and get car identifications.
 
@@ -122,7 +135,7 @@ async def analyze_image(
     b64_data, media_type = _encode_image(image_path)
 
     payload = {
-        "model": "qwen3.5-9b",
+        "model": model_name,
         "messages": [
             {"role": "system", "content": _SYSTEM_PROMPT},
             {
@@ -148,11 +161,19 @@ async def analyze_image(
         "chat_template_kwargs": {"enable_thinking": False},
     }
 
-    resp = await client.post(f"{server_url}/v1/chat/completions", json=payload)
+    # Build the completions endpoint: if server_url already has a path
+    # (e.g. http://host:port/v1), append /chat/completions; otherwise
+    # use the default /v1/chat/completions.
+    if server_url.rstrip("/").endswith("/v1"):
+        endpoint = f"{server_url.rstrip('/')}/chat/completions"
+    else:
+        endpoint = f"{server_url}/v1/chat/completions"
+
+    resp = await client.post(endpoint, json=payload)
     resp.raise_for_status()
 
     data = resp.json()
-    text = data["choices"][0]["message"]["content"]
+    text = data["choices"][0]["message"]["content"] or ""
 
     raw_cars = _parse_response(text)
     results = []

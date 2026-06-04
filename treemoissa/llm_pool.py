@@ -90,6 +90,7 @@ class LLMPool:
     output_dir: Path
     transport: httpx.AsyncBaseTransport | None = None
     on_progress: Callable[[], None] | None = None
+    model_name: str = "qwen3.5-9b"
     _server_index: int = 0  # rotating index for round-robin
     _server_stats: dict = field(default_factory=dict, init=False)
 
@@ -122,7 +123,7 @@ class LLMPool:
                 try:
                     result, raw_response = await analyze_image(
                         image_path, client=client, server_url=primary.url,
-                        context=context,
+                        context=context, model_name=self.model_name,
                     )
                     responding_url = primary.url
                     break
@@ -142,7 +143,7 @@ class LLMPool:
                 try:
                     result, raw_response = await analyze_image(
                         image_path, client=client, server_url=server.url,
-                        context=context,
+                        context=context, model_name=self.model_name,
                     )
                     responding_url = server.url
                     break

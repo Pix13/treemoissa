@@ -115,6 +115,8 @@ def _run_llm_pipeline(
     output_dir: Path,
     llm_host: str,
     concurrency: int,
+    *,
+    llm_model: str = "qwen3.5-9b",
 ) -> dict:
     """Run the async LLM-based pipeline."""
     from treemoissa.llm_pool import LLMPool, ServerConfig
@@ -128,6 +130,7 @@ def _run_llm_pipeline(
     server_list = ", ".join(s.url for s in servers)
     console.print(f"[bold]Mode:[/bold] LLM vision")
     console.print(f"[bold]Servers:[/bold] {server_list}")
+    console.print(f"[bold]Model:[/bold] {llm_model}")
     console.print(f"[bold]Concurrency:[/bold] {concurrency} per server")
     console.print(f"[bold]Found {len(images)} images to process.[/bold]\n")
 
@@ -137,6 +140,7 @@ def _run_llm_pipeline(
         servers=servers,
         concurrency=concurrency,
         output_dir=output_dir,
+        model_name=llm_model,
     )
 
     with _make_progress() as progress:
@@ -301,6 +305,12 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Concurrent requests per server (default: 1)",
     )
     parser.add_argument(
+        "--llm-model",
+        type=str,
+        default="qwen3.5-9b",
+        help="Model name on the LLM server (default: qwen3.5-9b)",
+    )
+    parser.add_argument(
         "--model",
         type=str,
         choices=_ML_MODEL_CHOICES,
@@ -325,11 +335,12 @@ def run_pipeline(
     *,
     llm_host: str = "localhost:8080",
     llm_concurrency: int = 1,
+    llm_model: str = "qwen3.5-9b",
 ) -> dict:
     """Run the pipeline — LLM by default, ML if --model specified."""
     if model_key is not None:
         return _run_ml_pipeline(input_dir, output_dir, conf, model_key)
-    return _run_llm_pipeline(input_dir, output_dir, llm_host, llm_concurrency)
+    return _run_llm_pipeline(input_dir, output_dir, llm_host, llm_concurrency, llm_model=llm_model)
 
 
 def main() -> None:
@@ -348,6 +359,7 @@ def main() -> None:
             model_key=args.model,
             llm_host=args.llm_host,
             llm_concurrency=args.llm_concurrency,
+            llm_model=args.llm_model,
         )
 
 
