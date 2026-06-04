@@ -21,18 +21,56 @@ class ServerConfig:
 
     host: str
     port: int
+    _full_url: str = ""
+
+    @staticmethod
+    def from_url(url: str) -> "ServerConfig":
+        """Parse a full URL into a ServerConfig."""
+        # Strip trailing slash for consistency
+        url = url.rstrip("/")
+        # Split off scheme
+        if url.startswith("https://"):
+            remainder = url[8:]
+        elif url.startswith("http://"):
+            remainder = url[7:]
+        else:
+            remainder = url
+
+        # Split host:port from path
+        if "/" in remainder:
+            host_port, _path = remainder.split("/", 1)
+        else:
+            host_port = remainder
+
+        if ":" in host_port:
+            host, port_str = host_port.rsplit(":", 1)
+            port = int(port_str)
+        else:
+            host = host_port
+            port = 443 if url.startswith("https://") else 8080
+
+        return ServerConfig(host=host, port=port, _full_url=url)
 
     @property
     def url(self) -> str:
+        """Return the full server URL."""
+        if self._full_url:
+            return self._full_url
         return f"http://{self.host}:{self.port}"
 
     @staticmethod
     def parse(hosts_str: str) -> list[ServerConfig]:
-        """Parse 'ip:port,ip:port' into a list of ServerConfig."""
+        """Parse comma-separated server specs into a list of ServerConfig.
+
+        Accepts both legacy 'host:port' and full URLs like
+        'http://host:port' or 'http://host:port/path'.
+        """
         servers = []
         for part in hosts_str.split(","):
             part = part.strip()
-            if ":" in part:
+            if part.startswith("http://") or part.startswith("https://"):
+                servers.append(ServerConfig.from_url(part))
+            elif ":" in part:
                 host, port_str = part.rsplit(":", 1)
                 servers.append(ServerConfig(host=host, port=int(port_str)))
             else:

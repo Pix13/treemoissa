@@ -292,7 +292,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--llm-host",
         type=str,
         default="localhost:8080",
-        help="LLM server(s) as ip:port,ip:port (default: localhost:8080)",
+        help="LLM server(s) as host:port or http://host:port/path, comma-separated (default: localhost:8080)",
     )
     parser.add_argument(
         "--llm-concurrency",
